@@ -126,29 +126,56 @@ static int numberOfIntegers(FILE * inFile){
 
 // Copies the integers from the input file to the shared memory array
 static void copyIntegersFromFile(FILE * inFile, int * integers, int numInts){
-	char * line = NULL;
-	size_t size;
+	char ch;		// Stores each char from inFile
+	char buff[BUFF_SZ];	// Buffers chars to be converted to ints
+	int buffIndex = 0;	// Index of next buffer char
+	int intIndex = 0;	// Index of next integer in the array
 
 	// Resets file descriptor to beginning of file
 	rewind(inFile);
 
 	// Converts each line to an integer and stores in the shared int array
-	int i;
-	for(i = 0; i < numInts; i++){
-		if ((getline(&line, &size, inFile)) == -1)
-			free(line);
-			perrorExit("Failed to read line from input");
+	while ((ch = fgetc(inFile)) != EOF){
+	
+		// Handles any error from fgetc
+		if (ferror(inFile))
+			perrorExit("copyIntegersFromFile couldn't read char");
+		
+		// Adds digits to buff
+		if (isdigit(ch)){
+			buff[buffIndex++] = ch;
 
-		// Copies each integer into the array
-		integers[i] = atoi(line);
+			// Error on buffer overflow
+			if (buffIndex + 2 > BUFF_SZ)
+				perrorExit(
+					"copyIntegersFromFile buffer overflow"
+				);
+	
+		// Converts buff to int and adds to shared array on \n
+		} else if (ch == '\n') {
+
+			// intIndex should never be out of bounds
+			if (intIndex >= numInts)
+				perrorExit(
+					"copyIntegersFromFile out of bounds!"
+				);
+
+			// Adds new int to array 
+			buff[buffIndex] = '\0'; // Null terminates buff
+			integers[intIndex++] = atoi(buff); // Adds new int
+
+			// Resets buffer
+			buffIndex = 0;
+			buff[0] = '\0';
+		}
 	}
-
+	
 	// Prints the integers in shared memory
+	int i;
 	printf("Integers: ");
 	for (i = 0; i < numInts; i++)
 		printf("%d, ", integers[i]);
-
-	free(line);
+	printf("\n");
 }
 
 // Closes files, kills child processes and removes shared memory segment
