@@ -11,29 +11,43 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
+#include <pthread.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include "perrorExit.h"
 #include "sharedMemory.h"
 #include "shmkey.h"
+#include "semname.h"
 
-
+/* Prototypes */
 static void assignSignalHandlers();
+static void cleanUpAndExit(int param);
 static int numberOfIntegers(FILE * inFile);
-//static void initalizeMutex(pthread_mutex_t*);
 static void copyIntegersFromFile(FILE * inFile, int * integers, int numInts);
 //static void launchChildren(int * integers, int numInts);
 static void cleanUp();
 
-static const int BUFF_SZ = 100;	 // Number of bytes in char buffers
+/* Named Constants */
+static const int BUFF_SZ = 100;		 // Number of bytes in char buffers
+static const int MAX_SECONDS = 100;	 // Maximum total execution time
+static const char * LOG_FILE_NAME = "adder_log"; // Name of shared log file
 
+/* Static Global Variables */
 static char * shm = NULL;	 // Pointer to the shared memory region
 static FILE * inFile = NULL;	 // The file with integers to read
 FILE * logFile = NULL;		 // Pointer to log file in shared memory
+static sem_t * sem = NULL;	 // Semaphore protecting access to logFile
+
 
 int main(int argc, char * argv[]){
 	unsigned int numInts;	 // The number of integers to read from input
-	pthread_mutex_t * mutex; // Pointer to the mutex that protects the file
-	int * integers;		 // Pointer to the first int in the shared array
+	int * intArray;		 // Pointer to the first int in the shared array
+
+	alarm(MAX_SECONDS);	 // Limits total execution time to MAX_SECONDS
 
 	exeName = argv[0];	 // Assigns executable name for perrorExit
 	assignSignalHandlers();	 // Determines response to ctrl + C & alarm
@@ -46,28 +60,26 @@ int main(int argc, char * argv[]){
 	// Counts the number of integers in the input file
 	numInts = numberOfIntegers(inFile);
 
-	// Allocates shared memory for log file, a semaphore, and integers
-	shm = sharedMemory(
-		sizeof(FILE*) + sizeof(pthread_mutex_t) + numInts * sizeof(int),
-		IPC_CREAT
-	);
+	// Allocates shared memory for log file and integers
+	shm = sharedMemory(sizeof(FILE*) + numInts * sizeof(int), IPC_CREAT);
 
-	// Sets addresses of shared log file, semaphore, and integer array
+	// Sets addresses of shared log file and integer array
 	logFile = (FILE*)shm;
-	mutex = (pthread_mutex_t*)(shm + sizeof(FILE*));
-	integers = (int*)(mutex + sizeof(pthread_mutex_t));	
+	intArray = (int*)(shm + sizeof(FILE*));	
 		
 	// Opens the shared log file
-	if ((logFile = fopen("bin_adder.log", "w+")) == NULL)
+	if ((logFile = fopen(LOG_FILE_NAME, "w+")) == NULL)
 		perrorExit("Couldn't open log file");
 
-	// Initializes semaphore
-	// initializeMutex(mutex);
+	// Initializes semaphore to provide mutual exclusion fof logFile access
+	if ((sem = sem_open(SEMNAME, O_CREAT, 0600, 1)) == SEM_FAILED)
+		perrorExit("Failed creating semaphore");
 
 	// Copies ints from file into shared integer array
-	copyIntegersFromFile(inFile, integers, numInts);
+	copyIntegersFromFile(inFile, intArray, numInts);
 	
 	// Launch children
+	// launchChildren(numInts, intArray);
 	
 	cleanUp();
 
@@ -76,8 +88,49 @@ int main(int argc, char * argv[]){
 
 // Determines the processes response to ctrl + c or alarm
 static void assignSignalHandlers(){
-	printf("assignSignalHandlers - doing nothing for now\n");
-	fflush(stdout);
+        struct sigaction sigact;
+
+	// Initializes sigaction values
+        sigact.sa_handler = cleanUpAndExit;
+        sigact.sa_flags = 0;
+
+	// Assigns signals to sigact
+        if ((sigemptyset(&sigact.sa_mask) == -1)
+	    ||(sigaction(SIGALRM, &sigact, NULL) == -1)
+	    ||(sigaction(SIGINT, &sigact, NULL)  == -1))
+		perrorExit("Faild to install signal handler");
+
+}
+
+// Signal handler that deallocates shared memory, terminates children, and exits
+void cleanUpAndExit(int param){
+
+        // Prints error message
+        char buff[BUFF_SZ];
+        sprintf(buff,
+                 "%s: Error: Terminating after receiving a signal",
+                 exeName
+        );
+        perror(buff);
+
+	// Cleans up and exits
+	cleanUp();
+        exit(1);
+}
+
+// Closes files, removes shared memory, and kills child processes
+static void cleanUp(){
+
+	// Closes shared log file
+	if (logFile != NULL) fclose(logFile);
+
+	// Detatches from and removes shared memory
+	detach(shm);
+	removeSegment();
+
+	// kills all other processes in the same process group
+	signal(SIGQUIT, SIG_IGN);
+	kill(0, SIGQUIT);
 }
 
 // Counts the integers and validates the file format or exits
@@ -120,9 +173,6 @@ static int numberOfIntegers(FILE * inFile){
 
 	return numIntegers;
 }
-
-// Initializes semaphore protecting the log file
-
 
 // Copies the integers from the input file to the shared memory array
 static void copyIntegersFromFile(FILE * inFile, int * integers, int numInts){
@@ -178,16 +228,3 @@ static void copyIntegersFromFile(FILE * inFile, int * integers, int numInts){
 	printf("\n");
 }
 
-// Closes files, kills child processes and removes shared memory segment
-static void cleanUp(){
-	// Sends kill signal to child processes
-	// (eventually)
-
-	// Closes open files
-	if (inFile != NULL) fclose(inFile);
-	if (logFile != NULL) fclose(logFile);
-		
-	// Detaches from and removes shared memory	
-	detach(shm);
-	removeSegment();
-}	
