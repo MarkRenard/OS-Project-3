@@ -11,26 +11,23 @@
 #include <semaphore.h>
 #include <errno.h>
 #include <time.h>
+#include <pthread.h>
 
 #include "perrorExit.h"
 #include "sharedMemory.h"
 #include "shmkey.h"
 #include "semname.h"
+#include "constants.h"
 
 /* Prototypes */
 static void launchChildren(char * argv[], int size);
 static pid_t launchChild(char * argv[], int index, int size);
 static void updateLogFile(pid_t pid, int index, int size);
 
-/* Named Constants */
-static const int BUFF_SZ = 100;		// Number of bytes in char buffers
-static const int MAX_RUNNING = 18;	// Max number of simultaneous children
-static const char * CHILD_PATH = "./bin_adder";	// Path to executable
-
 /* Static Global Variables */
-static char * shm = NULL;       // Pointer to the shared memory region
-FILE * logFile = NULL;          // Pointer to log file in shared memory
-static sem_t * sem = NULL;      // Semaphore protecting logFile
+static char * shm = NULL;       	// Pointer to the shared memory region
+FILE * logFile = NULL; 		        // Pointer to log file in shared memory
+static pthread_mutex_t * sem = NULL;    // Semaehore protecting logFile
 
 int main(int argc, char * argv[]){
 	int * intArray;			// Pointer to the shared int array
@@ -47,11 +44,8 @@ int main(int argc, char * argv[]){
 	// Gets pointers to shared memory items
 	shm = sharedMemory(shmSize, 0);
 	logFile = (FILE *) shm;
-	intArray = (int *)(shm + sizeof(FILE *));
-
-	// Opens existing semaphore
-	if ((sem = sem_open(SEMNAME, 0)) == SEM_FAILED)
-		perrorExit("Failed opening existing semaphore");
+	sem = (pthread_mutex_t *)(shm + sizeof(FILE *));
+	intArray = (int *)(shm + sizeof(FILE *) + sizeof(pthread_mutex_t));
 
 	// Launches children if index is 0 and number of ints is greater than 2
 	if (index == 0 && size > 2) launchChildren(argv, size);
@@ -88,7 +82,7 @@ static void launchChildren(char * argv[], int size){
 			printf("\n");
 			fflush(stdout);
 
-			sleep(1);
+			//sleep(1);
 			
 			// Waits for child to finish
 			while ((pid = wait(NULL)) == -1 && errno == EINTR);
@@ -143,26 +137,26 @@ static void updateLogFile(pid_t pid, int index, int size){
 	for (i = 0; i < 5; i++){
 
 		// Sleeps for random ammount of time (between 0 and 3 seconds)	
-		sleep(random() % 4);
+		sleep(PRE_LOG_SLEEP); //random() % (MAX_SLEEP - MIN_SLEEP + 1) + MIN_SLEEP);
 
 		current_time = time(NULL);
 		fprintf(stderr, 
-			"%s - Process %d attempting to enter critical section", 
-			ctime(&current_time),
-			index
+			"Process %d attempting to enter critical section - %s",
+			index,
+			ctime(&current_time)
 		);
 
 		// Waits for semaphore
-		sem_wait(sem);
+		pthread_mutex_lock(sem);
 
 		/* Critical section */
-		fprintf(stderr, "Process %d in critical section", index);
-		sleep(1);
+		fprintf(stderr, "Process %d in critical section\n", index);
+		sleep(PRE_LOG_SLEEP);
 		fprintf(logFile, "%d  %d  %d\n",(int)pid, index, size);
-		sleep(1);
+		sleep(POST_LOG_SLEEP);
 
 		// Signals semaphore
-		sem_post(sem);
+		pthread_mutex_unlock(sem);
 	}
 }
 

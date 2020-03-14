@@ -17,17 +17,16 @@
 #include <pthread.h>
 #include <signal.h>
 #include <unistd.h>
-
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <errno.h>
 
-
 #include "perrorExit.h"
 #include "sharedMemory.h"
 #include "shmkey.h"
 #include "semname.h"
+#include "constants.h"
 
 /* Prototypes */
 static void assignSignalHandlers();
@@ -39,28 +38,20 @@ static pid_t createChild(int index, int numInts, int shmSize);
 static void cleanUp();
 static void printArray(int * array, int size);
 static void leftShiftInts(int * intArray, int numInts, int gap);
-//static void initializeMutex(pthread_mutex_t*);
-
-
-/* Named Constants */
-static const int BUFF_SZ = 100;		 // Number of bytes in char buffers
-static const int MAX_SECONDS = 10000;	 // Maximum total execution time
-static const char * LOG_FILE_NAME = "adder_log"; // Name of shared log file
+static void initializeSemaphore(pthread_mutex_t *);
 
 /* Static Global Variables */
 static char * shm = NULL;	 // Pointer to the shared memory region
 static FILE * inFile = NULL;	 // The file with integers to read
-FILE * logFile = NULL;	 	 // Pointer to log file in shared memory
-static sem_t * sem = NULL;	 // Semaphore protecting logFile
-
+static FILE * logFile = NULL; 	 // Pointer to log file in shared memory
+static pthread_mutex_t * sem;	 // Semaphore protecting logFile
 
 int main(int argc, char * argv[]){
 	unsigned int numInts;	 // The number of integers to read from input
 	int * intArray;		 // Pointer to the first int in the shared array
-	int shmSize;		 // The size of the shared memory region in bytes
+	int shmSz;		 // The size of the shared memory region in bytes
 
 	alarm(MAX_SECONDS);	 // Limits total execution time to MAX_SECONDS
-
 	exeName = argv[0];	 // Assigns executable name for perrorExit
 	assignSignalHandlers();	 // Determines response to ctrl + C & alarm
 
@@ -73,27 +64,30 @@ int main(int argc, char * argv[]){
 	numInts = numberOfIntegers(inFile);
 
 	// Allocates shared memory for log file and integers
-	shmSize = sizeof(FILE*) + numInts * sizeof(int);
-	shm = sharedMemory(shmSize, IPC_CREAT);
+	shmSz = sizeof(FILE*) + sizeof(pthread_mutex_t) + numInts * sizeof(int);
+	shm = sharedMemory(shmSz, IPC_CREAT);
 
-	// Sets addresses of shared log file and integer array
+	// Sets addresses of shared log file, a semaphore, and the integer array
 	logFile = (FILE*)shm;
-	intArray = (int*)(shm + sizeof(FILE*));	
+	sem = (pthread_mutex_t*)(shm + sizeof(FILE*));
+	intArray = (int*)(shm + sizeof(FILE*) + sizeof(pthread_mutex_t));	
 		
 	// Opens the shared log file
-	if ((logFile = fopen(LOG_FILE_NAME, "w+")) == NULL)
+	if ((logFile = fopen(LOG_FILE_NAME, "w")) == NULL)
 		perrorExit("Couldn't open log file");
+	
+	fprintf(logFile, "Testing %d %d %d\n", 1, 2, 3);
 
 	// Initializes semaphore to provide mutual exclusion for logFile access
-	if ((sem = sem_open(SEMNAME, O_CREAT, 0600, 1)) == SEM_FAILED)
-		perrorExit("Failed creating semaphore");
+	initializeSemaphore(sem);
 
 	// Copies ints from file into shared integer array
 	copyIntegersFromFile(intArray, numInts);
 	
-	// Launch children
-	launchChildren(intArray, numInts, shmSize);
+	// Launches children
+	launchChildren(intArray, numInts, shmSz);
 	
+	// Ignores interrupts, kills child processes, closes files, removes shm
 	cleanUp();
 
 	return 0;
@@ -244,9 +238,9 @@ static void copyIntegersFromFile(int * intArray, int numInts){
 	printArray(intArray, numInts);
 	printf("\n");
 }
-/*
+
 // Initializes semaphore protecting the log file
-static void initializeMutex(pthread_mutex_t * mutex){
+static void initializeSemaphore(pthread_mutex_t * mutex){
         pthread_mutexattr_t attributes;	// mutex attributes struct
 
 	// Initializes mutex attributes struct
@@ -258,8 +252,8 @@ static void initializeMutex(pthread_mutex_t * mutex){
 	// Initializes the mutex with the attributes struct
         pthread_mutex_init(mutex, &attributes);
 }
-*/
 
+// Launches a bin_adder child for each iteration of the summation algorithm
 static void launchChildren(int * intArray, int numInts, int shmSize){
 	int intsToAdd;	// The number of integers for the child to add
 	pid_t pid;	// Pid of each child process launch children creates
@@ -269,8 +263,6 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 
 	intsToAdd = numInts;
 	while(intsToAdd > 1){
-	//	printf("Child called with intsToAdd == %d", intsToAdd);
-	//	fflush(stdout);
 		pid = createChild(0, intsToAdd, shmSize);
 		waitpid(pid, NULL, 0);
 
@@ -285,7 +277,7 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 		printArray(intArray, intsToAdd);
 		printf("\n");
 		
-		sleep(1);
+		//sleep(1);
 	}
 
 }
@@ -319,13 +311,9 @@ static pid_t createChild(int index, int numInts, int shmSize){
 	// Execs bin_adder if this process is the child
 	if ((pid = fork()) == -1) perrorExit("createChild failed to fork");
 
-	//printf("Forked! pid: %d\n", pid);
-	//fflush(stdout);
-
-
 	if(pid == 0) {
-		char ind[BUFF_SZ];
-		sprintf(ind, "%d", index);
+		char indx[BUFF_SZ];
+		sprintf(indx, "%d", index);
 
 		char nInts[BUFF_SZ];
 		sprintf(nInts, "%d", numInts);
@@ -333,19 +321,10 @@ static pid_t createChild(int index, int numInts, int shmSize){
 		char shmSz[BUFF_SZ];
 		sprintf(shmSz, "%d", shmSize);
 
-		//printf("ABOUT to exec index %d\n", index);
-		//fflush(stdout);
-
-		execl("./bin_adder", "./bin_adder", ind, nInts, shmSz, NULL);
-		printf("FAILED TO EXEC!\n");
-		fflush(stdout);
-
-
+		execl("./bin_adder", "./bin_adder", indx, nInts, shmSz, NULL);
 		perrorExit("Failed to exec!");
 
 	}
-
-	sleep(1);
 	
 	// Returns pid of child if this process is parent
 	return pid;	

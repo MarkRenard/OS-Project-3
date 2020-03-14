@@ -6,7 +6,7 @@ BIN_ADDER     = bin_adder
 BIN_ADDER_OBJ = bin_adder.o $(SHARED_O)
 BIN_ADDER_H   = $(SHARED_H)
 
-SHARED_H  = sharedMemory.h perrorExit.h shmkey.h
+SHARED_H  = sharedMemory.h perrorExit.h shmkey.h constants.h
 SHARED_O  = sharedMemory.o perrorExit.o 
 
 OUTPUT    = $(MASTER) $(BIN_ADDER)
