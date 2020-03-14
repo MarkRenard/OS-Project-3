@@ -15,7 +15,8 @@ FLAGS     = -Wall -g -lpthread
 
 .SUFFIXES: .c .o
 
-all: $(MASTER)
+
+all: $(OUTPUT)
 
 $(MASTER): $(MASTER_OBJ) $(MASTER_H)
 	$(CC) $(FLAGS) -o $@ $(MASTER_OBJ)
