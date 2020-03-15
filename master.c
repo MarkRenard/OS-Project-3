@@ -49,12 +49,14 @@ static void initializeSemaphore(pthread_mutex_t *);
 /* Static Global Variables */
 static char * shm = NULL;	 	// Pointer to the shared memory region
 static FILE * inFile = NULL;	 	// The file with integers to read
-static pthread_mutex_t * sem = NULL;	// Semaphore protecting logFile
 
 int main(int argc, char * argv[]){
 	unsigned int numInts;	 // The number of integers to read from input
 	int * intArray;		 // Pointer to the first int in the shared array
 	int shmSz;		 // The size of the shared memory region in bytes
+	
+	pthread_mutex_t * lgSem;	// Semaphore protecting main logFile
+	pthread_mutex_t * semLgSem;	// Sem protecting sem activity log file
 
 	alarm(MAX_SECONDS);	 // Limits total execution time to MAX_SECONDS
 	exeName = argv[0];	 // Assigns executable name for perrorExit
@@ -72,18 +74,23 @@ int main(int argc, char * argv[]){
 	shmSz = sizeof(FILE*) + sizeof(pthread_mutex_t) + numInts * sizeof(int);
 	shm = sharedMemory(shmSz, IPC_CREAT);
 
-	// Sets addresses of a semaphore and the integer array
-	sem = (pthread_mutex_t*)shm;
-	intArray = (int*)(shm + sizeof(pthread_mutex_t));	
+	// Sets addresses of a lgSemaphore and the integer array
+	lgSem = (pthread_mutex_t*)shm;
+	semLgSem = (pthread_mutex_t*)(shm + sizeof(pthread_mutex_t));
+	intArray = (int*)(shm + 2 * sizeof(pthread_mutex_t));	
 		
-	// Initializes semaphore to provide mutual exclusion for logFile access
-	initializeSemaphore(sem);
+	// Initializes semaphores to provide mutual exclusion for log file access
+	initializeSemaphore(lgSem);
+	initializeSemaphore(semLgSem);
 
 	// Copies ints from file into shared integer array
 	copyIntegersFromFile(intArray, numInts);
 	
 	// Launches children
 	launchChildren(intArray, numInts, shmSz);
+
+	// Prints result
+	printf("The sum is %d. Have a splendid day!\n", intArray[0]);
 	
 	// Ignores interrupts, kills child processes, closes files, removes shm
 	cleanUp();

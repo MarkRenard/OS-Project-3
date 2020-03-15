@@ -13,6 +13,7 @@ OUTPUT    = $(MASTER) $(BIN_ADDER)
 CC        = gcc
 FLAGS     = -Wall -g -lpthread -lm
 METHOD	  = #-DM2
+SLEEP	  = #-DNOSLEEP
 
 .SUFFIXES: .c .o
 
@@ -25,13 +26,13 @@ $(BIN_ADDER): $(BIN_ADDER_OBJ) $(BIN_ADDER_H)
 	$(CC) $(FLAGS) -o $@ $(BIN_ADDER_OBJ)
 
 .c.o:
-	$(CC) $(FLAGS) $(METHOD) -c $<
+	$(CC) $(FLAGS) $(METHOD) $(SLEEP) -c $<
 
 .PHONY: clean rmfile cleanall
 clean:
 	/bin/rm -f $(OUTPUT) *.o 
-rmfile:
-	/bin/rm -f adder_log 
+rmfiles:
+	/bin/rm -f adder_log semaphore_log
 cleanall:
-	/bin/rm -f adder_log $(OUTPUT) *.o
+	/bin/rm -f adder_log semaphore_log $(OUTPUT) *.o
 

@@ -1,6 +1,16 @@
 Summation method 2 is enabled with the following commands:
-	make clean
+	make cleanall
 	make METHOD=-DM2
+
+Additionally, all sleep time variables can be set to 0 using
+	make cleanall
+	make SLEEP=-DNOSLEEP
+
+They can be used in combination:
+	make cleanall
+	make SLEEP=-DNOSLEEP METHOD=-DM2
+
+NOSLEEP is useful for verifying the correctness of the summation algorithms.
 
 Method 2 adds ceil(n/lg(n)) groups of at most lg(n) integers each and
 adds the results using method 1. This is triggered by calling bin_adder with
@@ -56,7 +66,8 @@ W_1(n) and W_2(n), respectively.
 
 For either method, the time spent sleeping durring each execution of the
 critical section is 2 seconds, and it is accessed 5 times (assuming successful
-execution), so 10 seconds per log file update.
+execution), so 10 seconds per log file update is spent sleeping for each child
+process.
 
 
 For method 1:
@@ -71,7 +82,7 @@ For method 2:
 	       ~ 10 * [ceil(n / lg(n)) + ceil(n/(lg(n))) - 1] seconds + W_2(n)
 	       ~ 10 * (2 ceil(n/lg(n)) - 1) seconds + W_2(n)
 
-T_2(n) Є o(T_1(n)), assuming W_2(n) Є O(W_1(n)).
+T_2(n) Є o(T_1(n)), assuming W_2(n) Є o(T_1(n)).
 
 It's worth noting that for n > 8, neither method will complete within 100
 seconds.

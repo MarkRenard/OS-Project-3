@@ -37,11 +37,12 @@ static void updateLogFile(pid_t pid, int index, int size);
 static void criticalSection(pid_t pid, int index, int size);
 static void sumInts(int * intArray, int resultIndex, int numInts);
 static void leftShiftInts(int * intArray, int numInts, int gap);
+static void logSemaphoreActivity(char * msg);
 
 /* Static Global Variables */
-static char * shm = NULL;       	// Pointer to the shared memory region
-FILE * logFile = NULL; 		        // Pointer to log file in shared memory
-static pthread_mutex_t * sem = NULL;    // Semaehore protecting logFile
+static char * shm = NULL;       	  // Pointer to shared memory region
+static pthread_mutex_t * sem = NULL;      // Semaehore protecting logFile
+static pthread_mutex_t * semLgSem = NULL; // Sem protecting sem activity log
 
 int main(int argc, char * argv[]){
 	int * intArray;			// Pointer to the shared int array
@@ -58,21 +59,22 @@ int main(int argc, char * argv[]){
 	// Gets pointers to shared memory items
 	shm = sharedMemory(shmSize, 0);
 	sem = (pthread_mutex_t *)(shm);
-	intArray = (int *)(shm + sizeof(pthread_mutex_t));
+	semLgSem = (pthread_mutex_t *)(shm + sizeof(pthread_mutex_t));
+	intArray = (int *)(shm + 2 * sizeof(pthread_mutex_t));
 
 	// Launches children if called with -1 or -2 as an index by master
 	if (index < 0){
-		int numGroups;
-		int groupSize;
+		int numGroups; // The number of groups of ints to add
+		int groupSize; // The number of ints per group
 
-		// Computes values for mode 1
+		// Computes values for method 1
 		if (index == -1) {
 			printf("Method 1 procedure on %d ints\n", size);
 
 			numGroups = (int)ceil(size/2.0);
 			groupSize = 2;
 
-		// Computes values for mode 2
+		// Computes values for method 2
 		} else if (index == -2) {
 			printf("Method 2 procedure on %d ints\n", size);
 			
@@ -166,23 +168,27 @@ static pid_t launchChild(char * argv[], int index, int size){
 // Updates the log file with pid, index, and the number of integers added
 static void updateLogFile(pid_t pid, int index, int size){
 	time_t current_time;
+	char msgBuff[BUFF_SZ];
 	
 	// Seeds random number generator
 	srand((unsigned int) time(NULL));	
 	
-	// Follows the template provided in ass3.pdf
+	// Follows the template provided in the assignment description
 	int i;
 	for (i = 0; i < 5; i++){
 
 		// Sleeps for random ammount of time (between 0 and 3 seconds)	
 		sleep(random() % (MAX_SLEEP - MIN_SLEEP + 1) + MIN_SLEEP);
 
+		// Prints semaphore activity to stderr and log
 		current_time = time(NULL);
-		fprintf(stderr, 
-			"Process %d attempting to enter critical section - %s",
-			(int)pid,
+		sprintf(msgBuff, 
+			"%d %d %d waiting for semaphore before critical" \
+			" section %s",(int)pid, index, size, \
 			ctime(&current_time)
 		);
+		fprintf(stderr, msgBuff);
+		logSemaphoreActivity(msgBuff);
 
 		// Waits for semaphore
 		pthread_mutex_lock(sem);
@@ -200,9 +206,11 @@ static void criticalSection(pid_t pid, int index, int size){
 	FILE * logFile;		// The protected log file
 	char msg[BUFF_SZ];	// Buffer for stderr and log file message
 
-	// Creates critical section message and prints to stderr
-	sprintf(msg, "Process %d in critical section\n", pid);
+	// Creates critical section message and prints to stderr and sem_log
+	sprintf(msg, "%d %d %d semaphore aquired, in critical section\n", pid,
+		 index, size);
 	fprintf(stderr, msg);
+	logSemaphoreActivity(msg);
 	
 	// Attempts to open log file
 	if ((logFile = fopen(LOG_FILE_NAME, "a")) == NULL)
@@ -210,7 +218,6 @@ static void criticalSection(pid_t pid, int index, int size){
 
 	// Sleeps, writes to log file, sleeps again
 	sleep(PRE_LOG_SLEEP);
-	fprintf(logFile, msg);
 	fprintf(logFile, "%d %d %d\n", (int)pid, index, size);
 	sleep(POST_LOG_SLEEP);
 
@@ -245,5 +252,26 @@ static void leftShiftInts(int * intArray, int size, int gap){
 
 	printf("AFTER LEFTSHIFT:\n");
 	printArray(intArray, 32);
+}
+
+// Logs when process waits for or aquires a semaphore
+static void logSemaphoreActivity(char * msg){
+	FILE * semLog;
+
+	// Protects access to semaphore log file
+	pthread_mutex_lock(semLgSem);
+
+	// Writes message to semaphore log file
+	if ((semLog = fopen(SEM_LOG_NAME, "a")) == NULL)
+		perrorExit("Couldn't open semaphore log file");
+
+	fprintf(semLog, msg);
+
+	if (fclose(semLog) == -1)
+		perrorExit("Failed to close semaphore log file");
+
+
+	// Signals semaphore log semaphore
+	pthread_mutex_unlock(semLgSem);
 }
 
