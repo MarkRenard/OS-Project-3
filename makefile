@@ -11,7 +11,8 @@ SHARED_O  = sharedMemory.o perrorExit.o
 
 OUTPUT    = $(MASTER) $(BIN_ADDER)
 CC        = gcc
-FLAGS     = -Wall -g -lpthread
+FLAGS     = -Wall -g -lpthread -lm
+METHOD	  = #-DM2
 
 .SUFFIXES: .c .o
 
@@ -25,7 +26,7 @@ $(BIN_ADDER): $(BIN_ADDER_OBJ) $(BIN_ADDER_H)
 	$(CC) $(FLAGS) -o $@ $(BIN_ADDER_OBJ)
 
 .c.o:
-	$(CC) $(FLAGS) -c $<
+	$(CC) $(FLAGS) $(METHOD) -c $<
 
 .PHONY: clean rmfile cleanall
 clean:

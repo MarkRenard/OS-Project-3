@@ -1,0 +1,9 @@
+Summation method 2 is enabled with the following commands:
+	make clean
+	make METHOD=-DM2
+
+Method 2 adds ceil(n/lg(n)) groups of at most lg(n) integers each and
+adds the results using method 1, as per instructions. 
+
+All project-specific named constants are in one convenient location, 
+constants.h, for easy modification.

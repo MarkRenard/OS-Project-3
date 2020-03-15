@@ -21,12 +21,19 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <math.h>
 
 #include "perrorExit.h"
 #include "sharedMemory.h"
 #include "shmkey.h"
-#include "semname.h"
 #include "constants.h"
+
+/* Preprocessor directives determining summation method used */
+#ifdef M2
+#define METHOD 2
+#else
+#define METHOD 1
+#endif
 
 /* Prototypes */
 static void assignSignalHandlers();
@@ -41,10 +48,9 @@ static void leftShiftInts(int * intArray, int numInts, int gap);
 static void initializeSemaphore(pthread_mutex_t *);
 
 /* Static Global Variables */
-static char * shm = NULL;	 // Pointer to the shared memory region
-static FILE * inFile = NULL;	 // The file with integers to read
-static FILE * logFile = NULL; 	 // Pointer to log file in shared memory
-static pthread_mutex_t * sem;	 // Semaphore protecting logFile
+static char * shm = NULL;	 	// Pointer to the shared memory region
+static FILE * inFile = NULL;	 	// The file with integers to read
+static pthread_mutex_t * sem = NULL;	// Semaphore protecting logFile
 
 int main(int argc, char * argv[]){
 	unsigned int numInts;	 // The number of integers to read from input
@@ -67,23 +73,28 @@ int main(int argc, char * argv[]){
 	shmSz = sizeof(FILE*) + sizeof(pthread_mutex_t) + numInts * sizeof(int);
 	shm = sharedMemory(shmSz, IPC_CREAT);
 
-	// Sets addresses of shared log file, a semaphore, and the integer array
-	logFile = (FILE*)shm;
-	sem = (pthread_mutex_t*)(shm + sizeof(FILE*));
-	intArray = (int*)(shm + sizeof(FILE*) + sizeof(pthread_mutex_t));	
+	// Sets addresses of a semaphore and the integer array
+	sem = (pthread_mutex_t*)shm;
+	intArray = (int*)(shm + sizeof(pthread_mutex_t));	
 		
 	// Opens the shared log file
-	if ((logFile = fopen(LOG_FILE_NAME, "w")) == NULL)
-		perrorExit("Couldn't open log file");
+	//if ((logFile = fopen(LOG_FILE_NAME, "w")) == NULL)
+	//	perrorExit("Couldn't open log file");
 	
-	fprintf(logFile, "Testing %d %d %d\n", 1, 2, 3);
+	//fprintf(logFile, "Testing %d %d %d\n", 1, 2, 3);
 
 	// Initializes semaphore to provide mutual exclusion for logFile access
 	initializeSemaphore(sem);
 
 	// Copies ints from file into shared integer array
 	copyIntegersFromFile(intArray, numInts);
-	
+
+	if (METHOD == 2){
+		printf("Method 2 procedure!\n");
+	} else {
+		printf("Method 1 procedure!\n");
+	}
+
 	// Launches children
 	launchChildren(intArray, numInts, shmSz);
 	
@@ -139,7 +150,7 @@ static void cleanUp(){
 	kill(0, SIGQUIT);
 
 	// Closes files
-	if (logFile != NULL) fclose(logFile);
+//	if (logFile != NULL) fclose(logFile);
 	if (inFile != NULL) fclose(inFile);
 
 	// Detatches from and removes shared memory
@@ -163,6 +174,8 @@ static int numberOfIntegers(FILE * inFile){
 				newLine = 1;
 				line++;
 			} else {
+
+				// Consecutive new line characters error
 				char buff[BUFF_SZ];
 				sprintf(buff, "Line %d: consecutive \\n", line);
 				errno = EPERM;
@@ -262,18 +275,30 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 	fflush(stdout);
 
 	intsToAdd = numInts;
+
+	// Applies one iteration of method 2 if selected
+	if (METHOD == 2){
+		pid = createChild(-2, intsToAdd, shmSize);
+		waitpid(pid, NULL, 0);
+		intsToAdd = \
+			(int)ceil(intsToAdd/(log((double)intsToAdd)/log(2.0)));
+
+		printArray(intArray, intsToAdd);
+	}
+
+	// Applies method 1 until a result is obtained
 	while(intsToAdd > 1){
-		pid = createChild(0, intsToAdd, shmSize);
+		pid = createChild(-1, intsToAdd, shmSize);
 		waitpid(pid, NULL, 0);
 
-		printf("Before shift: ");
+	/*	printf("Before shift: ");
 		printArray(intArray, intsToAdd);
 
 		// Moves integers to the left
 		leftShiftInts(intArray, intsToAdd, 2);
-		intsToAdd /= 2;
+	*/	intsToAdd = (int)ceil(intsToAdd/2.0);
 
-		printf("After shift: ");
+	//	printf("After shift: ");
 		printArray(intArray, intsToAdd);
 		printf("\n");
 		
@@ -299,8 +324,7 @@ static void printArray(int * array, int size){
 		printf("%d, ", array[i]);
 	}
 	printf("\n");
-}
-	
+}	
 
 static pid_t createChild(int index, int numInts, int shmSize){
 	pid_t pid;
