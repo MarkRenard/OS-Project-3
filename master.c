@@ -44,7 +44,6 @@ static void launchChildren(int * intArray, int numInts, int shmSize);
 static pid_t createChild(int index, int numInts, int shmSize);
 static void cleanUp();
 static void printArray(int * array, int size);
-static void leftShiftInts(int * intArray, int numInts, int gap);
 static void initializeSemaphore(pthread_mutex_t *);
 
 /* Static Global Variables */
@@ -77,24 +76,12 @@ int main(int argc, char * argv[]){
 	sem = (pthread_mutex_t*)shm;
 	intArray = (int*)(shm + sizeof(pthread_mutex_t));	
 		
-	// Opens the shared log file
-	//if ((logFile = fopen(LOG_FILE_NAME, "w")) == NULL)
-	//	perrorExit("Couldn't open log file");
-	
-	//fprintf(logFile, "Testing %d %d %d\n", 1, 2, 3);
-
 	// Initializes semaphore to provide mutual exclusion for logFile access
 	initializeSemaphore(sem);
 
 	// Copies ints from file into shared integer array
 	copyIntegersFromFile(intArray, numInts);
-
-	if (METHOD == 2){
-		printf("Method 2 procedure!\n");
-	} else {
-		printf("Method 1 procedure!\n");
-	}
-
+	
 	// Launches children
 	launchChildren(intArray, numInts, shmSz);
 	
@@ -150,7 +137,6 @@ static void cleanUp(){
 	kill(0, SIGQUIT);
 
 	// Closes files
-//	if (logFile != NULL) fclose(logFile);
 	if (inFile != NULL) fclose(inFile);
 
 	// Detatches from and removes shared memory
@@ -291,31 +277,12 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 		pid = createChild(-1, intsToAdd, shmSize);
 		waitpid(pid, NULL, 0);
 
-	/*	printf("Before shift: ");
-		printArray(intArray, intsToAdd);
+		intsToAdd = (int)ceil(intsToAdd/2.0);
 
-		// Moves integers to the left
-		leftShiftInts(intArray, intsToAdd, 2);
-	*/	intsToAdd = (int)ceil(intsToAdd/2.0);
-
-	//	printf("After shift: ");
 		printArray(intArray, intsToAdd);
 		printf("\n");
-		
-		//sleep(1);
 	}
 
-}
-
-static void leftShiftInts(int * intArray, int numInts, int gap){
-	int left = 1;	 // Index of an int on the left
-	int right = gap; // Index of an int on the right
-
-	while (right < numInts){
-		intArray[left] = intArray[right];
-		left++;
-		right += gap;
-	}
 }
 
 static void printArray(int * array, int size){

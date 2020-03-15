@@ -16,7 +16,6 @@ METHOD	  = #-DM2
 
 .SUFFIXES: .c .o
 
-
 all: $(OUTPUT)
 
 $(MASTER): $(MASTER_OBJ) $(MASTER_H)

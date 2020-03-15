@@ -3,7 +3,75 @@ Summation method 2 is enabled with the following commands:
 	make METHOD=-DM2
 
 Method 2 adds ceil(n/lg(n)) groups of at most lg(n) integers each and
-adds the results using method 1, as per instructions. 
+adds the results using method 1. This is triggered by calling bin_adder with
+an index of -2. Calculations proceed using method 1.
+
+Summation method 1 is enabled by default. In it, master iteratively launches
+bin_adder processes with index -1. At iteration i, size(i) = ceil(size(i-1)/2),
+and after each iteration, the results are left-shifted and a zero is appended, 
+so method 1 still works with odd sizes, as in the case where method 2 is 
+enabled and ceil(n/lg(n)) is odd.
 
 All project-specific named constants are in one convenient location, 
-constants.h, for easy modification.
+constants.h, for easy modification. sharedMemory.c and perrorExit.c are
+recycled from assignment 2.
+
+
+  ** Comments on Performance **
+
+The time to completion for each method is almost all sleep time, so their
+efficiencies can be approximated as the average time spent sleeping as a
+function of n. Since processes always sleep for 2 seconds while executing the
+mutually exclusive critical section, all processes at each iteration spend this
+time sleeping non-concurrently.
+
+Furthermore, the random 0 to 3 seconds sleeping before waiting for the 
+semaphore will only add to total execution time if all of the processes 
+simultaneously executing updateLogFile are sleeping just before they wait for 
+the semaphore, or in other words, if the number of processes that wait for
+zero seconds is zero.
+
+Let z_i be a random variable representing the number of processes asleep for
+zero seconds before waiting for the semaphore after i seconds have passed. Let
+m_i be the number of processes that could be sleeping after i seconds.
+
+	P(z_0 = 0) = (3/4)^m_0 
+
+The only way for this random sleeping time to add a second after the first
+second has passed is if at most 1 process has slept for 0 seconds. Otherwise,
+there would be a process already waiting for the semaphore, ready to enter the 
+critical section immediately. Since a second has passed, there are only 3
+possible values for the random ammount of sleep time, and only 2 are non-zero,
+so
+
+	P(z_0 < 2) = (j=0 to 1)Σ(m_0 choose j)(1/4)^i * (3/4)^(m_0 - j)
+
+	P(z_1 = 0) = (2/3)^m_1
+
+	P(z_1 = 0 AND z_0 < 2) = (2/3)^m_1 * P(z_0 < 2)
+
+This is probably getting too long and complicated for a readme, so the expected
+time added to the total execution time for approach 1 and 2 shall be denoted
+W_1(n) and W_2(n), respectively.
+
+For either method, the time spent sleeping durring each execution of the
+critical section is 2 seconds, and it is accessed 5 times (assuming successful
+execution), so 10 seconds per log file update.
+
+
+For method 1:
+
+	T_1(n) ~ 10 * [(from i=0 to lg(n-1))Σ(2^i)] seconds + W_1(n)
+	       = 10 * [n - 1] seconds + W_1(n)
+
+For method 2:
+
+	T_2(n) ~ 10 * [ceil(n/lg(n)) + (from i=0 to lg(ceil(n/lg(n)-1))Σ(2^i)]
+		 seconds + W_2(n)
+	       ~ 10 * [ceil(n / lg(n)) + ceil(n/(lg(n))) - 1] seconds + W_2(n)
+	       ~ 10 * (2 ceil(n/lg(n)) - 1) seconds + W_2(n)
+
+T_2(n) Є o(T_1(n)), assuming W_2(n) Є O(W_1(n)).
+
+It's worth noting that for n > 8, neither method will complete within 100
+seconds.

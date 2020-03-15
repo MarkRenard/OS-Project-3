@@ -13,11 +13,11 @@
 #define MAX_PROCESSES 20		// Max simultaneous processes
 #define MAX_RUNNING MAX_PROCESSES - 2	// Max children of bin_adder
 
-#define MAX_SLEEP 0	// Max sleep in seconds before critical section
+#define MAX_SLEEP 3	// Max sleep in seconds before critical section
 #define MIN_SLEEP 0	// Min sleep in seconds before critical section
 
-#define PRE_LOG_SLEEP 0		// Sleep time just before writing to log
-#define POST_LOG_SLEEP 0	// Sleep time just after writing to log
+#define PRE_LOG_SLEEP 1		// Sleep time just before writing to log
+#define POST_LOG_SLEEP 1	// Sleep time just after writing to log
 
 /* Used by both */
 #define BUFF_SZ 100			// The size of character buffers

@@ -31,8 +31,7 @@ static void printArray(int * array, int size){
 }
 
 /* Prototypes */
-static void launchChildrenM1(char * argv[], int size);
-static void launchChildrenM2(char * argv[], int size, int totalChildren, int gap);
+static void launchChildren(char * argv[], int size, int numGroups, int gap);
 static pid_t launchChild(char * argv[], int index, int size);
 static void updateLogFile(pid_t pid, int index, int size);
 static void criticalSection(pid_t pid, int index, int size);
@@ -63,30 +62,31 @@ int main(int argc, char * argv[]){
 
 	// Launches children if called with -1 or -2 as an index by master
 	if (index < 0){
-		int totalChildren;
-		int gap;
+		int numGroups;
+		int groupSize;
 
-		// Launches children in mode 1
+		// Computes values for mode 1
 		if (index == -1) {
 			printf("Method 1 procedure on %d ints\n", size);
 
-			totalChildren = (int)ceil(size/2.0);
-			gap = 2;
-			launchChildrenM2(argv, size, totalChildren, gap);
-			leftShiftInts(intArray, size, 2);
+			numGroups = (int)ceil(size/2.0);
+			groupSize = 2;
 
-		// Launches children in mode 2
+		// Computes values for mode 2
 		} else if (index == -2) {
 			printf("Method 2 procedure on %d ints\n", size);
 			
-			int totalChildren = \
+			numGroups = \
 				(int)ceil(size/log((double)size)/log(2.0));
-			int gap = (int)ceil(log((double)size)/log(2.0));
- 
-			launchChildrenM2(argv, size, totalChildren, gap);
-			leftShiftInts(intArray, size, gap);
-			
+			groupSize = (int)ceil(log((double)size)/log(2.0));
 		}
+
+		// Creates child bin_adders
+		launchChildren(argv, size, numGroups, groupSize);
+
+		// Performs computation as parent bin_adder
+		sumInts(intArray, 0, groupSize);
+		leftShiftInts(intArray, size, groupSize);
 
 	// Performs computation if this process is a child of a bin_adder		
 	} else {
@@ -100,60 +100,24 @@ int main(int argc, char * argv[]){
 
 }
 
-// Launches child bin_adders that add pairs of integers
-static void launchChildrenM1(char * argv[], int size){
-	int index = 0;		  // Stores index of each child process
-	int running = 0;	  // The number of children currently executing
-	int completed = 0;	  // The number of children that finished
-	int total = (int)ceil(size/2.0); // Number of children required for computation
-	pid_t pid = 0;		  // Temp storage for child pids
-
-	while (running + completed < total){
-
-		// Creates bin_adder child with new index and size
-		launchChild(argv, index, 2);
-
-		// Updates index and number of running children	
-		index += 2;
-		running++;
-
-		// Waits if maximum simultaneous processes reached
-		if (running == MAX_RUNNING){
-			// Waits for child to finish
-			while ((pid = wait(NULL)) == -1 && errno == EINTR);
-
-			// Updates number of running and completed children
-			running--;
-			completed++;
-		}
-	}
-
-	// Waits for running processes to finish
-	while (running > 0){
-		while ((pid = wait(NULL)) == -1 && errno == EINTR);
-		running--;
-	}
-
-}
-
-// Launches children using method 2
-static void launchChildrenM2(char * argv[], int size, int totalChildren, int gap){
-	int index = 0;		 // Stores index of each child process
+// Launches numGroups-1 children which each sum numInts integers & store @ index
+static void launchChildren(char * argv[], int size, int numGroups, int numInts){
+	int index = numInts;	 // Stores index of each child process
 	int running = 0;	 // The number of children currently executing
 	int completed = 0;	 // The number of children that finished
 	pid_t pid = 0;		 // Temp storage for child pids
 
-	while (running + completed < totalChildren){
+	while (running + completed < numGroups){
 
-		// Checks for gap change on last iteration
-		if (index == totalChildren - 1)
-			gap = max(size - totalChildren * gap, 2);
+		// Checks for numInts change on last iteration for method 2
+		if (running + completed == numGroups - 1)
+			numInts = max(size - numGroups * numInts, 2);
 
 		// Creates bin_adder child with new index and size
-		launchChild(argv, index, gap);
+		launchChild(argv, index, numInts);
 
 		// Updates index and number of running children	
-		index += gap;
+		index += numInts;
 		running++;
 
 		// Waits if maximum simultaneous processes reached
@@ -168,7 +132,7 @@ static void launchChildrenM2(char * argv[], int size, int totalChildren, int gap
 		}
 	}
 
-	// Waits for running processes to finish
+	// Waits for running child processes to finish
 	while (running > 0){
 		while ((pid = wait(NULL)) == -1 && errno == EINTR);
 		running--;
