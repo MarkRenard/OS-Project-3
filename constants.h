@@ -7,7 +7,7 @@
 
 /* Used by master.c */
 #define MAX_SECONDS 100			// Max total execution time
-
+#define TIME_LOG_NAME "time_log"	// Name of file logging start & end
 
 /* Used by bin_adder.c */
 #define LOG_FILE_NAME "adder_log" 	// Name of the critical resource

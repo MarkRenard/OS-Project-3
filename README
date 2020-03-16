@@ -12,9 +12,13 @@ They can be used in combination:
 
 NOSLEEP is useful for verifying the correctness of the summation algorithms.
 
-Method 2 adds ceil(n/lg(n)) groups of at most lg(n) integers each and
-adds the results using method 1. This is triggered by calling bin_adder with
-an index of -2. Calculations proceed using method 1.
+All project-specific named constants are in one convenient location, 
+constants.h, for easy modification. sharedMemory.c and perrorExit.c make using
+shared memory and printing error messages easier. randomTestGen.c generates
+a test file.
+
+The log file that is deemed the critical resource is adder_log. When a process
+waits for or acquires a semaphore, it is logged in semaphore_log. 
 
 Summation method 1 is enabled by default. In it, master iteratively launches
 bin_adder processes with index -1. At iteration i, size(i) = ceil(size(i-1)/2),
@@ -22,12 +26,16 @@ and after each iteration, the results are left-shifted and a zero is appended,
 so method 1 still works with odd sizes, as in the case where method 2 is 
 enabled and ceil(n/lg(n)) is odd.
 
-All project-specific named constants are in one convenient location, 
-constants.h, for easy modification. sharedMemory.c and perrorExit.c are
-recycled from assignment 2.
+In method 2, bin_adder adds ceil(n/lg(n)) groups of at most lg(n) integers each
+and left-shifts the results. This is triggered by calling bin_adder with
+an index of -2. Calculations proceed using method 1.
 
 
   ** Comments on Performance **
+
+Using an input file of 64 randomly generated integers, neither process
+completes within 100 seconds. Removing this limit, method 1 took 12
+minutes, 25 seconds, and method 2 took 7 minutes, 35 seconds. 
 
 The time to completion for each method is almost all sleep time, so their
 efficiencies can be approximated as the average time spent sleeping as a
@@ -35,7 +43,35 @@ function of n. Since processes always sleep for 2 seconds while executing the
 mutually exclusive critical section, all processes at each iteration spend this
 time sleeping non-concurrently.
 
-Furthermore, the random 0 to 3 seconds sleeping before waiting for the 
+For either method, the time spent sleeping durring each execution of the
+critical section is 2 seconds, and it is accessed 5 times (assuming successful
+execution), so 10 seconds per log file update is spent sleeping for each child
+process.
+
+The expected time added to the total execution time by the random sleep period
+(between 0 and 3 seconds, inclusive) for approach 1 and 2 shall be denoted 
+W_1(n) and W_2(n), respectively.
+
+For method 1:
+
+	T_1(n) ~ 10 * [(from i=0 to lg(n-1))Σ(2^i)] seconds + W_1(n)
+	       = 10 * [n - 1] seconds + W_1(n)
+
+For method 2:
+
+	T_2(n) ~ 10 * [ceil(n/lg(n)) + (from i=0 to lg(ceil(n/lg(n)-1))Σ(2^i)]
+		 seconds + W_2(n)
+	       ~ 10 * [ceil(n / lg(n)) + ceil(n/(lg(n))) - 1] seconds + W_2(n)
+	       ~ 10 * (2 ceil(n/lg(n)) - 1) seconds + W_2(n)
+
+T_2(n) Є o(T_1(n)), assuming W_2(n) Є o(T_1(n)).
+
+It's worth noting that for n > 8, neither method will complete within 100
+seconds.
+
+  ** Additional Comments - The Effect of Random Sleep **
+
+The random 0 to 3 seconds sleeping before waiting for the 
 semaphore will only add to total execution time if all of the processes 
 simultaneously executing updateLogFile are sleeping just before they wait for 
 the semaphore, or in other words, if the number of processes that wait for
@@ -59,30 +95,3 @@ so
 	P(z_1 = 0) = (2/3)^m_1
 
 	P(z_1 = 0 AND z_0 < 2) = (2/3)^m_1 * P(z_0 < 2)
-
-This is probably getting too long and complicated for a readme, so the expected
-time added to the total execution time for approach 1 and 2 shall be denoted
-W_1(n) and W_2(n), respectively.
-
-For either method, the time spent sleeping durring each execution of the
-critical section is 2 seconds, and it is accessed 5 times (assuming successful
-execution), so 10 seconds per log file update is spent sleeping for each child
-process.
-
-
-For method 1:
-
-	T_1(n) ~ 10 * [(from i=0 to lg(n-1))Σ(2^i)] seconds + W_1(n)
-	       = 10 * [n - 1] seconds + W_1(n)
-
-For method 2:
-
-	T_2(n) ~ 10 * [ceil(n/lg(n)) + (from i=0 to lg(ceil(n/lg(n)-1))Σ(2^i)]
-		 seconds + W_2(n)
-	       ~ 10 * [ceil(n / lg(n)) + ceil(n/(lg(n))) - 1] seconds + W_2(n)
-	       ~ 10 * (2 ceil(n/lg(n)) - 1) seconds + W_2(n)
-
-T_2(n) Є o(T_1(n)), assuming W_2(n) Є o(T_1(n)).
-
-It's worth noting that for n > 8, neither method will complete within 100
-seconds.

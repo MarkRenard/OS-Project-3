@@ -22,14 +22,6 @@
 /* macro for determining the max of two quantities */
 #define max(x,y) ((x >= y) ? x : y)
 
-static void printArray(int * array, int size){
-        int i;
-        for (i = 0; i < size; i++){
-                printf("%d, ", array[i]);
-        }
-        printf("\n");
-}
-
 /* Prototypes */
 static void launchChildren(char * argv[], int size, int numGroups, int gap);
 static pid_t launchChild(char * argv[], int index, int size);
@@ -52,9 +44,7 @@ int main(int argc, char * argv[]){
 	int size = atoi(argv[2]);	// Number of ints process should add
 	int shmSize = atoi(argv[3]);	// Size of the shared memory region
 
-	// Simply prints info on the child
-	printf("bin_adder %d: index %d, size %d\n", pid, index, size);
-	fflush(stdout);
+	exeName = argv[0];
 
 	// Gets pointers to shared memory items
 	shm = sharedMemory(shmSize, 0);
@@ -69,15 +59,11 @@ int main(int argc, char * argv[]){
 
 		// Computes values for method 1
 		if (index == -1) {
-			printf("Method 1 procedure on %d ints\n", size);
-
 			numGroups = (int)ceil(size/2.0);
 			groupSize = 2;
 
 		// Computes values for method 2
 		} else if (index == -2) {
-			printf("Method 2 procedure on %d ints\n", size);
-			
 			numGroups = \
 				(int)ceil(size/log((double)size)/log(2.0));
 			groupSize = (int)ceil(log((double)size)/log(2.0));
@@ -171,7 +157,7 @@ static void updateLogFile(pid_t pid, int index, int size){
 	char msgBuff[BUFF_SZ];
 	
 	// Seeds random number generator
-	srand((unsigned int) time(NULL));	
+	srand((unsigned int) time(NULL) + pid);	
 	
 	// Follows the template provided in the assignment description
 	int i;
@@ -238,9 +224,6 @@ static void leftShiftInts(int * intArray, int size, int gap){
         int left = 1;     // Index of an int on the left
         int right = gap;  // Index of an int on the right
 
-	printf("BEFORE LEFTSHIFT:\n");
-	printArray(intArray, 32);
-
         while (right < size){
                 intArray[left] = intArray[right];
                 left++;
@@ -250,8 +233,6 @@ static void leftShiftInts(int * intArray, int size, int gap){
 	// Appends a 0 so method 1 works with odd values of ceil(n/lg(n)) 
 	intArray[left] = 0;
 
-	printf("AFTER LEFTSHIFT:\n");
-	printArray(intArray, 32);
 }
 
 // Logs when process waits for or aquires a semaphore

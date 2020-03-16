@@ -2,8 +2,8 @@
 //
 // This file contains a program which reads integers from a file into a shared
 // memory array, divides them into groups, creates children that sum each group
-// and append comments to a log file, and measures the performance of the
-// processes.
+// and append comments to a log file, and records the start and end time of
+// computation.
 
 #include <ctype.h>
 #include <stdio.h>
@@ -43,18 +43,20 @@ static void copyIntegersFromFile(int * intArray, int numInts);
 static void launchChildren(int * intArray, int numInts, int shmSize);
 static pid_t createChild(int index, int numInts, int shmSize);
 static void cleanUp();
-static void printArray(int * array, int size);
 static void initializeSemaphore(pthread_mutex_t *);
 
 /* Static Global Variables */
 static char * shm = NULL;	 	// Pointer to the shared memory region
 static FILE * inFile = NULL;	 	// The file with integers to read
+static FILE * timeLog = NULL;		// Logs start and end times
 
 int main(int argc, char * argv[]){
 	unsigned int numInts;	 // The number of integers to read from input
 	int * intArray;		 // Pointer to the first int in the shared array
 	int shmSz;		 // The size of the shared memory region in bytes
 	
+	FILE * timeLog;
+
 	pthread_mutex_t * lgSem;	// Semaphore protecting main logFile
 	pthread_mutex_t * semLgSem;	// Sem protecting sem activity log file
 
@@ -62,6 +64,11 @@ int main(int argc, char * argv[]){
 	exeName = argv[0];	 // Assigns executable name for perrorExit
 	assignSignalHandlers();	 // Determines response to ctrl + C & alarm
 
+	// Prints start time
+	timeLog = fopen(TIME_LOG_NAME, "w");
+	time_t current = time(NULL);
+	fprintf(timeLog, "Start time: %s", ctime(&current));
+	
 	// Opens inFile with specified path, exits on failure
 	if (argc < 2) perrorExit("Please specify input file name");
 	if ((inFile = fopen(argv[1], "r")) == NULL)
@@ -91,6 +98,11 @@ int main(int argc, char * argv[]){
 
 	// Prints result
 	printf("The sum is %d. Have a splendid day!\n", intArray[0]);
+
+	// Prints end time
+	current = time(NULL);
+	fprintf(timeLog, "End time: %s", ctime(&current));
+	fclose(timeLog);
 	
 	// Ignores interrupts, kills child processes, closes files, removes shm
 	cleanUp();
@@ -145,6 +157,7 @@ static void cleanUp(){
 
 	// Closes files
 	if (inFile != NULL) fclose(inFile);
+	if (timeLog != NULL) fclose(timeLog);
 
 	// Detatches from and removes shared memory
 	detach(shm);
@@ -155,6 +168,7 @@ static void cleanUp(){
 static int numberOfIntegers(FILE * inFile){
 	int line = 1;		// The line number of the file
 	int newLine = 1;	// 1 if at the beginning of a new line
+	int negative = 0;	// 1 after a - has been encountered
 	int numIntegers = 0;	// Counter for the number of integers
 	char ch;		// Stores each char in file
 
@@ -163,16 +177,15 @@ static int numberOfIntegers(FILE * inFile){
 
 		// Sets newline to true if \n, error on consecutive \n
 		if (ch == '\n'){
-   			if (!newLine){
-				newLine = 1;
-				line++;
-			} else {
-
-				// Consecutive new line characters error
+			// Error if a negative int expected
+			if(negative){
 				char buff[BUFF_SZ];
-				sprintf(buff, "Line %d: consecutive \\n", line);
+				sprintf(buff, "non-int: line %d", line);
 				errno = EPERM;
 				perrorExit(buff);
+			} else {
+				newLine = 1;
+				line++;
 			}
 
 		// Increments numIntegers on digit after new line
@@ -180,16 +193,24 @@ static int numberOfIntegers(FILE * inFile){
 			newLine = 0;
 			numIntegers++;
 
-		// Exits if non-digit found
+		// Resets negative flag if digit encountered after int
+		} else if (negative && isdigit(ch)){
+			negative = 0;
+
+		// Registers negative symbol on new line
+		} else if (newLine && ch == '-') {
+			negative = 1;
+			newLine = 0;
+			numIntegers++;
+
+		// Exits if non-int found
 		} else if (!isdigit(ch)){
 			char buff[BUFF_SZ];
-			sprintf(buff, "Non-int on line %d\n", line);
+			sprintf(buff, "Non-int on line %d", line);
 			errno = EPERM;
 			perrorExit(buff);
 		}
 	}
-
-	printf("Num integers: %d\n", numIntegers);
 
 	return numIntegers;
 }
@@ -212,7 +233,7 @@ static void copyIntegersFromFile(int * intArray, int numInts){
 			perrorExit("copyIntegersFromFile couldn't read char");
 		
 		// Adds digits to buff
-		if (isdigit(ch)){
+		if (isdigit(ch) || ch == '-'){
 			buff[buffIndex++] = ch;
 
 			// Error on buffer overflow
@@ -239,10 +260,6 @@ static void copyIntegersFromFile(int * intArray, int numInts){
 			buff[0] = '\0';
 		}
 	}
-	
-	// Prints the intArray in shared memory
-	printArray(intArray, numInts);
-	printf("\n");
 }
 
 // Initializes semaphore protecting the log file
@@ -264,9 +281,6 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 	int intsToAdd;	// The number of integers for the child to add
 	pid_t pid;	// Pid of each child process launch children creates
 	
-	printf("Running launchChildren - numInts: %d\n", numInts);
-	fflush(stdout);
-
 	intsToAdd = numInts;
 
 	// Applies one iteration of method 2 if selected
@@ -276,7 +290,6 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 		intsToAdd = \
 			(int)ceil(intsToAdd/(log((double)intsToAdd)/log(2.0)));
 
-		printArray(intArray, intsToAdd);
 	}
 
 	// Applies method 1 until a result is obtained
@@ -285,26 +298,13 @@ static void launchChildren(int * intArray, int numInts, int shmSize){
 		waitpid(pid, NULL, 0);
 
 		intsToAdd = (int)ceil(intsToAdd/2.0);
-
-		printArray(intArray, intsToAdd);
-		printf("\n");
 	}
 
 }
 
-static void printArray(int * array, int size){
-	int i;
-	for (i = 0; i < size; i++){
-		printf("%d, ", array[i]);
-	}
-	printf("\n");
-}	
-
+// Forks and execs a single bin_adder process
 static pid_t createChild(int index, int numInts, int shmSize){
 	pid_t pid;
-
-	printf("\nCreate child called for index %d, numInts %d\n", index, numInts);
-	fflush(stdout);
 
 	// Execs bin_adder if this process is the child
 	if ((pid = fork()) == -1) perrorExit("createChild failed to fork");
@@ -319,7 +319,7 @@ static pid_t createChild(int index, int numInts, int shmSize){
 		char shmSz[BUFF_SZ];
 		sprintf(shmSz, "%d", shmSize);
 
-		execl("./bin_adder", "./bin_adder", indx, nInts, shmSz, NULL);
+		execl(CHILD_PATH, CHILD_PATH, indx, nInts, shmSz, NULL);
 		perrorExit("Failed to exec!");
 
 	}
